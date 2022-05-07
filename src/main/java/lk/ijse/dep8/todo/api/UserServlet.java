@@ -7,14 +7,22 @@ import lk.ijse.dep8.todo.dto.UserDTO;
 import lk.ijse.dep8.todo.exception.ValidationException;
 import sun.security.util.Password;
 
+import javax.annotation.Resource;
 import javax.servlet.*;
 import javax.servlet.http.*;
 import javax.servlet.annotation.*;
+import javax.sql.DataSource;
 import java.io.IOException;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 
 @WebServlet(name = "UserServlet", value = {"/users/", "/users"})
 public class UserServlet extends HttpServlet {
+
+    @Resource(name = "java:comp/env/jdbc/pool4todo")
+    private volatile DataSource pool;
 
     @Override
     protected void doPost(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
@@ -45,7 +53,32 @@ public class UserServlet extends HttpServlet {
                 throw new ValidationException("Invalid password");
             }
 
-            response.sendError(HttpServletResponse.SC_CREATED, "All good bro");
+            try(Connection connection = pool.getConnection()){
+
+                PreparedStatement stm = null;
+                stm = connection.prepareStatement("SELECT * FROM User WHERE email = ?");
+                stm.setString(1, user.getEmail());
+                ResultSet results = stm.executeQuery();
+                if(results.next()){
+                    /*There is a duplicate user*/
+                    response.sendError(HttpServletResponse.SC_CONFLICT, "This user is already in the system");
+                    return;
+                }
+
+                stm = connection.prepareStatement("INSERT INTO User (email, name, password) VALUES (?,?,?)");
+                stm.setString(1, user.getEmail());
+                stm.setString(2, user.getName());
+                stm.setString(3, user.getPassword());
+
+                int savedResult = stm.executeUpdate();
+                if(savedResult != 1){
+                    response.sendError(HttpServletResponse.SC_NO_CONTENT, "Failed to save user to the DB");
+                    return;
+                }
+                response.sendError(HttpServletResponse.SC_CREATED, "Saved user to the DB");
+            }
+
+
 
         }catch (ValidationException | JsonbException e){
             response.sendError(HttpServletResponse.SC_BAD_REQUEST, (e instanceof JsonbBuilder)?"Invalid":e.getMessage());
