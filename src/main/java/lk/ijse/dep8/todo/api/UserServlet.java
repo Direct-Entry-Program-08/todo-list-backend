@@ -1,5 +1,6 @@
 package lk.ijse.dep8.todo.api;
 
+import com.sun.org.apache.bcel.internal.generic.RET;
 import jakarta.json.bind.Jsonb;
 import jakarta.json.bind.JsonbBuilder;
 import jakarta.json.bind.JsonbException;
@@ -134,6 +135,75 @@ public class UserServlet extends HttpServlet {
             }
         }catch (JsonbException | ValidationException e){
             response.sendError(HttpServletResponse.SC_BAD_REQUEST, (e instanceof JsonbBuilder) ? "Invalid json":e.getMessage());
+        }catch (Throwable t){
+            t.printStackTrace();
+            response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+        }
+    }
+
+
+    private void doSaveOrUpdate(HttpServletRequest request , HttpServletResponse response) throws IOException {
+
+        /*Basically POST and PUT requests have json body*/
+        if(request.getContentType() == null || !request.getContentType().toLowerCase().startsWith("application/json")){
+            response.sendError(HttpServletResponse.SC_UNSUPPORTED_MEDIA_TYPE, "Required content type is not available");
+            return;
+        }
+
+        String method = request.getMethod();
+        String pathInfo = request.getPathInfo();
+
+        if(method.equals("POST") && !(pathInfo.equalsIgnoreCase("/users") || pathInfo.equalsIgnoreCase("/users/"))){
+            response.sendError(HttpServletResponse.SC_NOT_FOUND);
+        }else if(method.equals("PUT") && !(pathInfo != null && pathInfo.substring(1).matches("(?:[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*|\"(?:[\\x01-\\x08\\x0b\\x0c\\x0e-\\x1f\\x21\\x23-\\x5b\\x5d-\\x7f]|\\\\[\\x01-\\x09\\x0b\\x0c\\x0e-\\x7f])*\")@(?:(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?|\\[(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?|[a-z0-9-]*[a-z0-9]:(?:[\\x01-\\x08\\x0b\\x0c\\x0e-\\x1f\\x21-\\x5a\\x53-\\x7f]|\\\\[\\x01-\\x09\\x0b\\x0c\\x0e-\\x7f])+)\\])"))){
+            response.sendError(HttpServletResponse.SC_NOT_FOUND, "User not found in the DB");
+            return;
+        }
+
+        try{
+            Jsonb jsonb = JsonbBuilder.create();
+            UserDTO user = jsonb.fromJson(request.getReader(), UserDTO.class);
+
+            /*Validate the user details*/
+            if(method.equals("POST") && (user.getEmail() == null || !user.getEmail().matches("(?:[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*|\"(?:[\\x01-\\x08\\x0b\\x0c\\x0e-\\x1f\\x21\\x23-\\x5b\\x5d-\\x7f]|\\\\[\\x01-\\x09\\x0b\\x0c\\x0e-\\x7f])*\")@(?:(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?|\\[(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?|[a-z0-9-]*[a-z0-9]:(?:[\\x01-\\x08\\x0b\\x0c\\x0e-\\x1f\\x21-\\x5a\\x53-\\x7f]|\\\\[\\x01-\\x09\\x0b\\x0c\\x0e-\\x7f])+)\\])"))){
+                throw new ValidationException("Invalid Email");
+            }else if(user.getName() == null || !user.getName().matches("[A-Za-z ]+")){
+                throw new ValidationException("Invalid Name");
+            }else if(user.getPassword() == null || !user.getPassword().matches("^(?=.*[0-9])(?=.*[a-z])(?=.*[A-Z])(?=.*[!@#&()–[{}]:;',?/*~$^+=<>]).{8,20}$")){
+                /*
+                Password must contain at least one digit [0-9].
+                Password must contain at least one lowercase Latin character [a-z].
+                Password must contain at least one uppercase Latin character [A-Z].
+                Password must contain at least one special character like ! @ # & ( ).
+                Password must contain a length of at least 8 characters and a maximum of 20 characters.
+                 */
+                throw new ValidationException("Invalid password");
+            }
+
+            if (method.equals("PUT")){
+                user.setEmail(pathInfo.replaceAll("[/]", ""));
+            }
+
+            /*Create a connection with DB*/
+            try(Connection connection = pool.getConnection()){
+                PreparedStatement stm = connection.prepareStatement("SELECT * FROM User WHERE email=? ");
+                stm.setString(1, user.getEmail());
+                ResultSet results = stm.executeQuery();
+
+                /*Save or Update logic*/
+                if(results.next()){
+                    if(method.equals("POST")){
+                        /*TODO: Saved user already here*/
+                    }else{
+                        /*TODO: Update the user*/
+                    }
+                }else{
+                    /*TODO: There is no user because of that have to save the user*/
+                }
+            }
+            
+        }catch (JsonbException | ValidationException e){
+            response.sendError(HttpServletResponse.SC_BAD_REQUEST, (e instanceof JsonbException)? "Invalid Json":e.getMessage());
         }catch (Throwable t){
             t.printStackTrace();
             response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
