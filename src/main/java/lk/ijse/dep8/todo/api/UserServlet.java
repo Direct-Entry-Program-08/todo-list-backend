@@ -18,6 +18,8 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.List;
 
 @WebServlet(name = "UserServlet", value = { "/users/*"})
 public class UserServlet extends HttpServlet {
@@ -157,6 +159,71 @@ public class UserServlet extends HttpServlet {
         }catch (ValidationException e){
             e.printStackTrace();
             response.sendError(HttpServletResponse.SC_BAD_REQUEST);
+        }catch (Throwable t){
+            t.printStackTrace();
+            response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    @Override
+    protected void doGet(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
+        if(request.getPathInfo() != null && !request.getPathInfo().equals("/")){
+            response.sendError(HttpServletResponse.SC_NOT_FOUND);
+            return;
+        }
+
+        String query = request.getParameter("q");
+        query = "%" + (query==null?"":query) + "%";
+
+        try(Connection connection = pool.getConnection()){
+
+            /*Consider the pagination*/
+            boolean pagination = request.getParameter("page") != null && request.getParameter("size") != null;
+            String sql = null;
+            if(pagination){
+                sql = "SELECT * FROM User WHERE email LIKE ? OR name LIKE ? OR password LIKE ? LIMIT ? OFFSET ?";
+            }else {
+                sql = "SELECT * FROM User WHERE email LIKE ? OR name LIKE ? OR password LIKE ?";
+            }
+
+            PreparedStatement stm = connection.prepareStatement(sql);
+            PreparedStatement stmCount = connection.prepareStatement("SELECT count(*) FROM User WHERE email LIKE ? OR name LIKE ? OR password LIKE ?");
+            stm.setString(1, query);
+            stm.setString(2, query);
+            stm.setString(3, query);
+            stmCount.setString(1, query);
+            stmCount.setString(2, query);
+            stmCount.setString(3, query);
+
+            if(pagination){
+                int page = Integer.parseInt(request.getParameter("page"));
+                int size = Integer.parseInt(request.getParameter("size"));
+                stm.setInt(4, size);
+                stm.setInt(5, (page-1)*size);
+            }
+
+            ResultSet searchedResults = stm.executeQuery();
+            List<UserDTO> users = new ArrayList<>();
+
+            while (searchedResults.next()){
+                users.add(new UserDTO(
+                        searchedResults.getString("email"),
+                        searchedResults.getString("name"),
+                        searchedResults.getString("password")
+                ));
+            }
+
+            response.setContentType("application/json");
+
+            ResultSet searchCount = stmCount.executeQuery();
+            while (searchCount.next()){
+                response.setHeader("X-Count", searchCount.getString(1));
+            }
+
+            Jsonb jsonb = JsonbBuilder.create();
+            jsonb.toJson(users, response.getWriter());
+        }catch (JsonbException e){
+            response.sendError(HttpServletResponse.SC_BAD_REQUEST, "JsonbException");
         }catch (Throwable t){
             t.printStackTrace();
             response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
