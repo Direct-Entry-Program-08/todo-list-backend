@@ -123,4 +123,43 @@ public class UserServlet extends HttpServlet {
             response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
         }
     }
+
+
+    @Override
+    protected void doDelete(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
+
+        if (request.getPathInfo() == null || request.getPathInfo().equals('/')){
+            response.sendError(HttpServletResponse.SC_NOT_IMPLEMENTED, "Unable to delete all user yet");
+            return;
+        }else if (request.getPathInfo() != null && !request.getPathInfo().substring(1).matches("(?:[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*|\"(?:[\\x01-\\x08\\x0b\\x0c\\x0e-\\x1f\\x21\\x23-\\x5b\\x5d-\\x7f]|\\\\[\\x01-\\x09\\x0b\\x0c\\x0e-\\x7f])*\")@(?:(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?|\\[(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?|[a-z0-9-]*[a-z0-9]:(?:[\\x01-\\x08\\x0b\\x0c\\x0e-\\x1f\\x21-\\x5a\\x53-\\x7f]|\\\\[\\x01-\\x09\\x0b\\x0c\\x0e-\\x7f])+)\\])")){
+            response.sendError(HttpServletResponse.SC_NOT_FOUND, "User not found");
+            return;
+        }
+
+        String email = request.getPathInfo().replaceAll("[/]", "");
+
+        try(Connection connection = pool.getConnection()){
+            PreparedStatement stm = connection.prepareStatement("SELECT * FROM User WHERE email=?");
+            stm.setString(1, email);
+            ResultSet findResults = stm.executeQuery();
+            if(findResults.next()){
+                stm = connection.prepareStatement("DELETE FROM User WHERE email=?");
+                stm.setString(1, email);
+                int deleteResults = stm.executeUpdate();
+                if(deleteResults != 1){
+                    throw new RuntimeException("Failed to Delete User");
+                }else{
+                    response.setStatus(HttpServletResponse.SC_NO_CONTENT);
+                }
+            }else{
+                response.sendError(HttpServletResponse.SC_NOT_FOUND);
+            }
+        }catch (ValidationException e){
+            e.printStackTrace();
+            response.sendError(HttpServletResponse.SC_BAD_REQUEST);
+        }catch (Throwable t){
+            t.printStackTrace();
+            response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+        }
+    }
 }
