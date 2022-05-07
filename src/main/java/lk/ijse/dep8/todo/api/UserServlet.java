@@ -18,7 +18,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 
-@WebServlet(name = "UserServlet", value = {"/users/", "/users"})
+@WebServlet(name = "UserServlet", value = { "/users/*"})
 public class UserServlet extends HttpServlet {
 
     @Resource(name = "java:comp/env/jdbc/pool4todo")
@@ -77,15 +77,17 @@ public class UserServlet extends HttpServlet {
                 }
                 response.sendError(HttpServletResponse.SC_CREATED, "Saved user to the DB");
             }
-
-
-
         }catch (ValidationException | JsonbException e){
             response.sendError(HttpServletResponse.SC_BAD_REQUEST, (e instanceof JsonbBuilder)?"Invalid":e.getMessage());
         }catch (Throwable t){
             t.printStackTrace();
             response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
         }
+
+    }
+
+    @Override
+    protected void doPut(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
 
     }
 }
