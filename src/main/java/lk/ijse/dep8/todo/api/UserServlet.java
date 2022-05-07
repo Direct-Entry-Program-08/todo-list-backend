@@ -89,5 +89,54 @@ public class UserServlet extends HttpServlet {
     @Override
     protected void doPut(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
 
+        /*Check the url of the request and validate the email of the user*/
+        if(request.getPathInfo() == null || !request.getPathInfo().matches("(?:[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*|\"(?:[\\x01-\\x08\\x0b\\x0c\\x0e-\\x1f\\x21\\x23-\\x5b\\x5d-\\x7f]|\\\\[\\x01-\\x09\\x0b\\x0c\\x0e-\\x7f])*\")@(?:(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?|\\[(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?|[a-z0-9-]*[a-z0-9]:(?:[\\x01-\\x08\\x0b\\x0c\\x0e-\\x1f\\x21-\\x5a\\x53-\\x7f]|\\\\[\\x01-\\x09\\x0b\\x0c\\x0e-\\x7f])+)\\])")){
+            response.sendError(HttpServletResponse.SC_NOT_FOUND, "Invalid user mail");
+            return;
+        }else if(request.getContentType() == null || !request.getContentType().toLowerCase().startsWith("application/json")){
+            response.sendError(HttpServletResponse.SC_UNSUPPORTED_MEDIA_TYPE, "Invalid content type");
+            return;
+        }
+
+        /*Add details to the object and validate the request details*/
+        try{
+            Jsonb jsonb = JsonbBuilder.create();
+            UserDTO user = jsonb.fromJson(request.getReader(), UserDTO.class);
+            user.setEmail(request.getPathInfo().substring(1));
+
+            if(user.getName() == null || !user.getName().matches("[A-Za-z ]+")){
+                throw new ValidationException("Invalid user name");
+            }else if(user.getPassword() == null || !user.getPassword().matches("^(?=.*[0-9])(?=.*[a-z])(?=.*[A-Z])(?=.*[!@#&()–[{}]:;',?/*~$^+=<>]).{8,20}$")){
+                throw new ValidationException("Invalid user password");
+            }
+
+            try(Connection connection = pool.getConnection()){
+
+                /*First check this user in the DB or not*/
+                PreparedStatement stm = connection.prepareStatement("SELECT * FROM User WHERE email=?");
+                stm.setString(1, user.getEmail());
+                ResultSet results = stm.executeQuery();
+                if(results.next()){
+                   /*TODO: Have to update the user*/
+                    stm = connection.prepareStatement("UPDATE User SET name=?, password=? WHERE email=?");
+                    stm.setString(1, user.getName());
+                    stm.setString(2, user.getPassword());
+                    stm.setString(3, user.getEmail());
+                    int updateResults = stm.executeUpdate();
+                    if(updateResults != 1){
+                        response.sendError(HttpServletResponse.SC_CONFLICT, "Failed to update user");
+                        return;
+                    }
+                    response.sendError(HttpServletResponse.SC_CREATED);
+                }else{
+                    response.sendError(HttpServletResponse.SC_NOT_FOUND, "The user is not found in the DB");
+                }
+            }
+        }catch (JsonbException | ValidationException e){
+            response.sendError(HttpServletResponse.SC_BAD_REQUEST, (e instanceof JsonbBuilder) ? "Invalid json":e.getMessage());
+        }catch (Throwable t){
+            t.printStackTrace();
+            response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+        }
     }
 }
