@@ -16,6 +16,8 @@ import java.io.IOException;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.util.ArrayList;
+import java.util.List;
 
 @WebServlet(name = "ItemServlet", value = "/items/*")
 public class ItemServlet extends HttpServlet {
@@ -91,9 +93,6 @@ public class ItemServlet extends HttpServlet {
                         response.setStatus(HttpServletResponse.SC_CREATED);
                     }
                 }else{
-                    System.out.println(item.getUserEmail());
-                    System.out.println(item.getStatus());
-                    System.out.println(item.getDescription());
 
                     PreparedStatement stm3 = connection.prepareStatement("INSERT INTO Item (description, status, user_mail) VALUES (?,?,?)");
                     stm3.setString(1, item.getDescription());
@@ -108,6 +107,107 @@ public class ItemServlet extends HttpServlet {
             }
         }catch (JsonbException | ValidationException e){
             response.sendError(HttpServletResponse.SC_BAD_REQUEST, (e instanceof JsonbException)? "Invalid Json":e.getMessage());
+        }catch (Throwable t){
+            t.printStackTrace();
+            response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+        }
+
+    }
+    @Override
+    protected void doDelete(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
+
+        if (request.getPathInfo() == null || request.getPathInfo().equals('/')){
+            response.sendError(HttpServletResponse.SC_NOT_IMPLEMENTED, "Unable to delete all Items yet");
+            return;
+        }else if (request.getPathInfo() != null && !request.getPathInfo().substring(1).matches("(?:[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*|\"(?:[\\x01-\\x08\\x0b\\x0c\\x0e-\\x1f\\x21\\x23-\\x5b\\x5d-\\x7f]|\\\\[\\x01-\\x09\\x0b\\x0c\\x0e-\\x7f])*\")@(?:(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?|\\[(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?|[a-z0-9-]*[a-z0-9]:(?:[\\x01-\\x08\\x0b\\x0c\\x0e-\\x1f\\x21-\\x5a\\x53-\\x7f]|\\\\[\\x01-\\x09\\x0b\\x0c\\x0e-\\x7f])+)\\])")){
+            response.sendError(HttpServletResponse.SC_NOT_FOUND, "User not found");
+            return;
+        }
+
+        String user_email = request.getPathInfo().replaceAll("[/]", "");
+
+        try(Connection connection = pool.getConnection()){
+            PreparedStatement stm = connection.prepareStatement("SELECT * FROM Item WHERE user_mail=?");
+            stm.setString(1, user_email);
+            ResultSet findResults = stm.executeQuery();
+            if(findResults.next()){
+                stm = connection.prepareStatement("DELETE FROM Item WHERE user_mail=?");
+                stm.setString(1, user_email);
+                int deleteResults = stm.executeUpdate();
+                if(deleteResults != 1){
+                    throw new RuntimeException("Failed to Delete User");
+                }else{
+                    response.setStatus(HttpServletResponse.SC_NO_CONTENT);
+                }
+            }else{
+                response.sendError(HttpServletResponse.SC_NOT_FOUND);
+            }
+        }catch (ValidationException e){
+            e.printStackTrace();
+            response.sendError(HttpServletResponse.SC_BAD_REQUEST);
+        }catch (Throwable t){
+            t.printStackTrace();
+            response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    @Override
+    protected void doGet(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
+        if(request.getPathInfo() != null && !request.getPathInfo().equals("/")){
+            response.sendError(HttpServletResponse.SC_NOT_FOUND);
+            return;
+        }
+
+        String query = request.getParameter("q");
+        query = "%" + (query==null?"":query) + "%";
+
+        try(Connection connection = pool.getConnection()){
+
+            /*Consider the pagination*/
+            boolean pagination = request.getParameter("page") != null && request.getParameter("size") != null;
+            String sql = null;
+            if(pagination){
+                sql = "SELECT * FROM Item WHERE user_mail LIKE ? OR description LIKE ? LIMIT ? OFFSET ?";
+            }else {
+                sql = "SELECT * FROM Item WHERE user_mail LIKE ? OR description LIKE ?";
+            }
+
+            PreparedStatement stm = connection.prepareStatement(sql);
+            PreparedStatement stmCount = connection.prepareStatement("SELECT count(*) FROM Item WHERE user_mail LIKE ? OR description LIKE ?");
+            stm.setString(1, query);
+            stm.setString(2, query);
+            stmCount.setString(1, query);
+            stmCount.setString(2, query);
+
+            if(pagination){
+                int page = Integer.parseInt(request.getParameter("page"));
+                int size = Integer.parseInt(request.getParameter("size"));
+                stm.setInt(4, size);
+                stm.setInt(5, (page-1)*size);
+            }
+
+            ResultSet searchedResults = stm.executeQuery();
+            List<ItemDTO> items = new ArrayList<>();
+
+            while (searchedResults.next()){
+                items.add(new ItemDTO(
+                        searchedResults.getString("user_email"),
+                        searchedResults.getString("description"),
+                        searchedResults.getString("status")
+                ));
+            }
+
+            response.setContentType("application/json");
+
+            ResultSet searchCount = stmCount.executeQuery();
+            while (searchCount.next()){
+                response.setHeader("X-Count", searchCount.getString(1));
+            }
+
+            Jsonb jsonb = JsonbBuilder.create();
+            jsonb.toJson(items, response.getWriter());
+        }catch (JsonbException e){
+            response.sendError(HttpServletResponse.SC_BAD_REQUEST, "JsonbException");
         }catch (Throwable t){
             t.printStackTrace();
             response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
