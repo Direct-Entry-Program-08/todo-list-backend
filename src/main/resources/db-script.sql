@@ -8,10 +8,9 @@ CREATE TABLE User(
 );
 
 CREATE TABLE Item(
-                     id INT AUTO_INCREMENT,
-                     description VARCHAR(50) NOT NULL ,
+                     id INT AUTO_INCREMENT PRIMARY KEY ,
+                     description VARCHAR(500) NOT NULL ,
                      status ENUM ('DONE', 'NOT-DONE'),
-                     user_mail VARCHAR(6) NOT NULL,
-                     CONSTRAINT PRIMARY KEY (id),
+                     user_mail VARCHAR(50) ,
                      CONSTRAINT FOREIGN KEY(user_mail) REFERENCES User(email) on Delete Cascade on Update Cascade
 );
